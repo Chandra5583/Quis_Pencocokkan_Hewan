@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Permainan Mencocokkan Soal</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .card {
+            transition: transform 0.3s, box-shadow 0.3s, background-color 0.3s;
+            word-break: break-word;
+        }
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        .selected {
+            border-color: #3b82f6; /* blue-500 */
+            transform: scale(1.05);
+            background-color: #dbeafe; /* blue-100 */
+        }
+        .matched {
+            visibility: hidden;
+            opacity: 0;
+            transform: scale(0.9);
+            transition: visibility 0s 0.5s, opacity 0.5s linear, transform 0.5s;
+        }
+        .incorrect {
+            animation: shake 0.5s;
+            border-color: #ef4444; /* red-500 */
+            background-color: #fee2e2; /* red-100 */
+        }
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+        }
+        /* Menyembunyikan panah pada input number */
+        input[type=number]::-webkit-inner-spin-button, 
+        input[type=number]::-webkit-outer-spin-button { 
+          -webkit-appearance: none; 
+          margin: 0; 
+        }
+        input[type=number] {
+          -moz-appearance: textfield;
+        }
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-blue-200 to-purple-300 text-gray-800 flex items-center justify-center min-h-screen p-4">
+
+    <div id="start-screen" class="text-center p-8 bg-white rounded-xl shadow-lg max-w-md w-full">
+        <img src="https://disdikbud.banyuasinkab.go.id/wp-content/uploads/sites/269/2022/11/Logo-Tut-Wuri-Handayani-PNG-Warna.png" alt="Logo Tut Wuri Handayani" class="w-20 h-20 mx-auto mb-4">
+        <h1 class="text-3xl font-bold mb-4 text-gray-700">Kuis Pencocokan Hewan</h1>
+        <p class="mb-6 text-gray-600">Masukkan data Anda untuk memulai kuis.</p>
+        <input type="text" id="player-name-input" placeholder="Ketik nama Anda di sini..." class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4 transition-all">
+        <input type="number" id="player-nisn-input" placeholder="Ketik NISN Anda di sini..." class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4 transition-all">
+        <button id="start-game-btn" class="w-full bg-blue-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-600 transition duration-300 flex items-center justify-center">
+            <span id="start-btn-text">Mulai Bermain</span>
+            <div id="start-loader" class="loader hidden"></div>
+        </button>
+        <p id="error-message" class="text-red-500 mt-4 text-sm hidden"></p>
+    </div>
+
+    <div id="game-screen" class="hidden w-full max-w-5xl mx-auto">
+        <div class="bg-white/90 backdrop-blur-sm rounded-xl shadow-lg p-6">
+            <!-- Header Game -->
+            <div class="flex flex-wrap justify-between items-center mb-6 border-b pb-4 gap-4">
+                <div>
+                    <h1 class="text-2xl font-bold text-gray-700">Pemain: <span id="player-name-display" class="text-blue-600"></span></h1>
+                    <p class="text-md text-gray-500 mt-1">NISN: <span id="player-nisn-display" class="font-semibold"></span></p>
+                </div>
+                <div class="flex items-center space-x-6">
+                    <div class="text-xl font-semibold">Skor: <span id="score" class="text-green-500">0</span></div>
+                    <div class="text-xl font-semibold">Waktu: <span id="timer" class="text-red-500">60</span>s</div>
+                </div>
+            </div>
+
+            <!-- Area Permainan -->
+            <p class="text-center text-gray-600 mb-6">Cocokkan Pertanyaan dengan Jawaban yang Benar!</p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <!-- Kolom Pertanyaan -->
+                <div>
+                    <h2 class="text-xl font-bold text-center mb-4 text-gray-700">Pertanyaan</h2>
+                    <div id="question-cards" class="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                        <!-- Kartu Pertanyaan akan dimasukkan di sini oleh JS -->
+                    </div>
+                </div>
+                <!-- Kolom Jawaban -->
+                <div>
+                    <h2 class="text-xl font-bold text-center mb-4 text-gray-700">Jawaban</h2>
+                    <div id="answer-cards" class="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                        <!-- Kartu Jawaban akan dimasukkan di sini oleh JS -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Hasil Akhir -->
+    <div id="result-modal" class="modal-overlay hidden">
+        <div class="bg-white rounded-xl shadow-lg text-center p-8 max-w-md w-full">
+            <h2 id="result-title" class="text-3xl font-bold mb-4">Waktu Habis!</h2>
+            <p class="mb-2 text-lg">Pemain: <span id="final-player-name" class="font-semibold text-blue-600"></span></p>
+            <p class="mb-4 text-lg">NISN: <span id="final-player-nisn" class="font-semibold text-blue-600"></span></p>
+            <p class="mb-6 text-lg">Skor Akhir Anda:</p>
+            <p id="final-score" class="text-5xl font-bold text-green-500 mb-8">0</p>
+            <p id="save-status" class="text-sm text-gray-600 h-5"></p>
+            <div class="grid grid-cols-1 gap-4 mt-2">
+                <button id="download-pdf-btn" class="w-full bg-green-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-600 transition duration-300">Unduh Hasil (PDF)</button>
+                <button id="play-again-btn" class="w-full bg-blue-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-600 transition duration-300">Main Lagi</button>
+                <button id="back-to-home-btn" class="w-full bg-gray-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-gray-600 transition duration-300">Ke Beranda</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Canvas tersembunyi untuk generate barcode -->
+    <canvas id="barcode-canvas" class="hidden"></canvas>
+
+    <script>
+        // --- Elemen DOM ---
+        const startScreen = document.getElementById('start-screen');
+        const gameScreen = document.getElementById('game-screen');
+        const playerNameInput = document.getElementById('player-name-input');
+        const playerNisnInput = document.getElementById('player-nisn-input');
+        const startGameBtn = document.getElementById('start-game-btn');
+        const startBtnText = document.getElementById('start-btn-text');
+        const startLoader = document.getElementById('start-loader');
+        const errorMessage = document.getElementById('error-message');
+        const playerNameDisplay = document.getElementById('player-name-display');
+        const playerNisnDisplay = document.getElementById('player-nisn-display');
+        const scoreEl = document.getElementById('score');
+        const timerEl = document.getElementById('timer');
+        const questionCardsContainer = document.getElementById('question-cards');
+        const answerCardsContainer = document.getElementById('answer-cards');
+        const resultModal = document.getElementById('result-modal');
+        const resultTitle = document.getElementById('result-title');
+        const finalPlayerName = document.getElementById('final-player-name');
+        const finalPlayerNisn = document.getElementById('final-player-nisn');
+        const finalScore = document.getElementById('final-score');
+        const playAgainBtn = document.getElementById('play-again-btn');
+        const backToHomeBtn = document.getElementById('back-to-home-btn');
+        const downloadPdfBtn = document.getElementById('download-pdf-btn');
+        const saveStatusEl = document.getElementById('save-status');
+
+        // --- State Permainan ---
+        let gameData = [];
+        let score = 0;
+        let timer;
+        let timeLeft = 60;
+        let selectedQuestionCard = null;
+        let selectedAnswerCard = null;
+        let matchedPairs = 0;
+        let playerName = '';
+        let playerNISN = '';
+        const answerColors = [
+            'bg-violet-500', 'bg-green-500', 'bg-amber-500',
+            'bg-sky-500', 'bg-rose-500', 'bg-teal-500',
+            'bg-fuchsia-500', 'bg-lime-500', 'bg-cyan-500',
+            'bg-orange-500', 'bg-pink-500', 'bg-indigo-500'
+        ];
+
+        // --- Fungsi ---
+        
+        // Fungsi untuk mengambil dan mem-parsing data CSV dari Google Sheets
+        async function loadGameData() {
+            const csvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT6YH8HW5gwf8WByOu-vABFkD8emEGdZEH2jZaYssdV4Fa7kA0lDwSCV1jQ0jz98VFIX9HQsTtmOqvx/pub?gid=0&single=true&output=csv';
+            try {
+                const response = await fetch(csvUrl);
+                if (!response.ok) {
+                    throw new Error(`Gagal memuat data: ${response.statusText}`);
+                }
+                const csvText = await response.text();
+                const lines = csvText.trim().split('\n');
+                // Mengubah header menjadi huruf kecil untuk pencocokan yang tidak sensitif huruf
+                const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+                const questionIndex = headers.indexOf('pertanyaan');
+                const answerIndex = headers.indexOf('jawaban');
+                const imageIndex = headers.indexOf('link gambar'); // Mengambil indeks kolom 'link gambar'
+
+                if (questionIndex === -1 || answerIndex === -1) {
+                    throw new Error('Kolom "pertanyaan" atau "jawaban" tidak ditemukan.');
+                }
+                
+                gameData = lines.slice(1).map(line => {
+                    const values = line.split(',');
+                    // Cek jika imageIndex ada, jika tidak ada maka value akan undefined
+                    const imageUrl = imageIndex !== -1 ? (values[imageIndex] ? values[imageIndex].trim() : '') : '';
+                    return {
+                        question: values[questionIndex].trim(),
+                        answer: values[answerIndex].trim(),
+                        image: imageUrl
+                    };
+                }).filter(item => item.question && item.answer);
+
+                return true;
+
+            } catch (error) {
+                console.error("Error loading game data:", error);
+                errorMessage.textContent = `Gagal mengambil data soal. Pastikan ada kolom "pertanyaan" dan "jawaban". Error: ${error.message}`;
+                errorMessage.classList.remove('hidden');
+                return false;
+            }
+        }
+
+        // Fungsi untuk mengacak array (Fisher-Yates shuffle)
+        function shuffle(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+            return array;
+        }
+
+        // Fungsi untuk membuat kartu
+        function createCard(text, imageUrl, type, category) {
+            const card = document.createElement('div');
+            // Menyesuaikan tinggi kartu jika tidak ada gambar
+            const cardHeight = (category === 'question' && imageUrl) ? 'h-40' : 'h-28';
+            card.className = `card cursor-pointer p-2 bg-white rounded-lg border-2 border-gray-200 text-center font-semibold text-gray-700 ${cardHeight} flex flex-col justify-center`;
+            card.dataset.type = type;
+            card.dataset.category = category;
+
+            if (category === 'question' && imageUrl) {
+                card.classList.remove('justify-center');
+                card.classList.add('justify-between');
+                const imgContainer = document.createElement('div');
+                imgContainer.className = 'w-full h-24 flex items-center justify-center mb-1';
+                const img = document.createElement('img');
+                img.src = imageUrl;
+                img.alt = `Gambar untuk ${text}`;
+                img.className = 'max-h-full max-w-full object-contain rounded-md';
+                // Fallback jika gambar gagal dimuat
+                img.onerror = function() {
+                    this.onerror = null;
+                    this.src = `https://placehold.co/100x80/e0e0e0/7f7f7f?text=Gagal+Muat`;
+                    this.alt = 'Gambar gagal dimuat';
+                };
+                imgContainer.appendChild(img);
+                card.appendChild(imgContainer);
+            }
+            
+            const textSpan = document.createElement('span');
+            textSpan.textContent = text;
+            textSpan.className = 'flex-grow flex items-center justify-center px-1';
+            card.appendChild(textSpan);
+
+            card.addEventListener('click', () => handleCardClick(card));
+            return card;
+        }
+        
+        // Fungsi untuk memulai permainan dari layar awal
+        async function startGame() {
+            playerName = playerNameInput.value.trim();
+            playerNISN = playerNisnInput.value.trim();
+
+            if (playerName === '' || playerNISN === '') {
+                if (playerName === '') playerNameInput.classList.add('border-red-500');
+                if (playerNISN === '') playerNisnInput.classList.add('border-red-500');
+                return;
+            }
+            
+            startBtnText.classList.add('hidden');
+            startLoader.classList.remove('hidden');
+            startGameBtn.disabled = true;
+            errorMessage.classList.add('hidden');
+
+            const dataLoaded = await loadGameData();
+
+            startBtnText.classList.remove('hidden');
+            startLoader.classList.add('hidden');
+            startGameBtn.disabled = false;
+
+            if (!dataLoaded) return;
+
+            startScreen.classList.add('hidden');
+            gameScreen.classList.remove('hidden');
+            playerNameDisplay.textContent = playerName;
+            playerNisnDisplay.textContent = playerNISN;
+            restartGame();
+        }
+
+        // Fungsi untuk memulai ulang permainan
+        function restartGame() {
+            resetGame();
+            setupBoard();
+            startTimer();
+        }
+
+        // Fungsi untuk mengatur papan permainan
+        function setupBoard() {
+            const questions = gameData.map(item => ({ text: item.question, type: item.answer, image: item.image }));
+            const answers = shuffle([...gameData]).map(item => ({ text: item.answer, type: item.answer, image: null }));
+
+            questions.forEach(q => {
+                questionCardsContainer.appendChild(createCard(q.text, q.image, q.type, 'question'));
+            });
+
+            answers.forEach((a, index) => {
+                const card = createCard(a.text, a.image, a.type, 'answer');
+                
+                // Hapus warna default dan tambahkan warna baru dari array
+                card.classList.remove('bg-white', 'text-gray-700', 'border-gray-200');
+                const colorIndex = index % answerColors.length;
+                card.classList.add(answerColors[colorIndex], 'text-white', 'font-bold', 'border-transparent');
+                
+                answerCardsContainer.appendChild(card);
+            });
+        }
+        
+        // Fungsi untuk menangani klik kartu
+        function handleCardClick(card) {
+            if (card.classList.contains('matched') || card.classList.contains('selected')) return;
+
+            const category = card.dataset.category;
+
+            if (category === 'question') {
+                if (selectedQuestionCard) selectedQuestionCard.classList.remove('selected');
+                selectedQuestionCard = card;
+                card.classList.add('selected');
+            } else if (category === 'answer') {
+                if (selectedAnswerCard) selectedAnswerCard.classList.remove('selected');
+                selectedAnswerCard = card;
+                card.classList.add('selected');
+            }
+
+            if (selectedQuestionCard && selectedAnswerCard) {
+                checkForMatch();
+            }
+        }
+
+        // Fungsi untuk memeriksa kecocokan
+        function checkForMatch() {
+            const questionType = selectedQuestionCard.dataset.type;
+            const answerType = selectedAnswerCard.dataset.type;
+
+            if (questionType === answerType) {
+                score += 20; // Skor diubah menjadi 20
+                matchedPairs++;
+                updateScore();
+                selectedQuestionCard.classList.add('matched');
+                selectedAnswerCard.classList.add('matched');
+                if (matchedPairs === gameData.length) {
+                    endGame(true);
+                }
+            } else {
+                selectedQuestionCard.classList.add('incorrect');
+                selectedAnswerCard.classList.add('incorrect');
+                setTimeout(() => {
+                    selectedQuestionCard.classList.remove('incorrect');
+                    selectedAnswerCard.classList.remove('incorrect');
+                }, 500);
+            }
+
+            setTimeout(() => {
+                if (selectedQuestionCard) selectedQuestionCard.classList.remove('selected');
+                if (selectedAnswerCard) selectedAnswerCard.classList.remove('selected');
+                selectedQuestionCard = null;
+                selectedAnswerCard = null;
+            }, 500);
+        }
+
+        // Fungsi untuk memperbarui skor
+        function updateScore() {
+            scoreEl.textContent = score;
+        }
+
+        // Fungsi untuk memulai timer
+        function startTimer() {
+            timer = setInterval(() => {
+                timeLeft--;
+                timerEl.textContent = timeLeft;
+                if (timeLeft <= 0) {
+                    endGame(false);
+                }
+            }, 1000);
+        }
+
+        // Fungsi untuk mengakhiri permainan
+        function endGame(isWin) {
+            clearInterval(timer);
+            finalScore.textContent = score;
+            finalPlayerName.textContent = playerName;
+            finalPlayerNisn.textContent = playerNISN;
+            resultTitle.textContent = isWin ? "Selamat, Anda Menang!" : "Waktu Habis!";
+            resultModal.classList.remove('hidden');
+            sendDataToSheet(); // Simpan data secara otomatis
+        }
+
+        // Fungsi untuk mengunduh hasil sebagai PDF
+        function downloadResultsPDF() {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+
+            const date = new Date();
+            const formattedDate = `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`;
+            const finalScoreValue = finalScore.textContent;
+            
+            // Data untuk barcode
+            const barcodeData = `NISN:${playerNISN};NAMA:${playerName};SKOR:${finalScoreValue}`;
+            
+            // Generate barcode di canvas tersembunyi
+            const canvas = document.getElementById('barcode-canvas');
+            JsBarcode(canvas, barcodeData, {
+                format: "CODE128",
+                width: 1.5,
+                height: 40,
+                fontSize: 14
+            });
+            const barcodeImage = canvas.toDataURL('image/png');
+
+
+            // Judul Dokumen
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(20);
+            doc.text("Sertifikat Hasil Kuis", 105, 25, { align: 'center' });
+            
+            // Garis bawah judul
+            doc.setLineWidth(0.5);
+            doc.line(80, 28, 130, 28);
+
+            // Informasi Pemain
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(12);
+            doc.text("Informasi Peserta:", 20, 45);
+            doc.text(`Nama: ${playerName}`, 20, 55);
+            doc.text(`NISN: ${playerNISN}`, 20, 65);
+
+            // Skor Akhir
+            doc.setFontSize(16);
+            doc.text("Skor Akhir", 105, 90, { align: 'center' });
+            
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(48);
+            doc.text(finalScoreValue, 105, 110, { align: 'center' });
+            
+            // Tambahkan gambar barcode ke PDF
+            doc.addImage(barcodeImage, 'PNG', 65, 120, 80, 30);
+
+            // Tanggal
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(10);
+            doc.setTextColor(150);
+            doc.text(`Tanggal Pengerjaan: ${formattedDate}`, 105, 165, { align: 'center' });
+
+            // Simpan file PDF
+            doc.save(`hasil-kuis-${playerName}.pdf`);
+        }
+        
+        // Fungsi untuk mengirim data ke Google Sheet
+        async function sendDataToSheet() {
+            saveStatusEl.textContent = 'Menyimpan hasil...';
+            saveStatusEl.classList.remove('text-green-600', 'text-red-500');
+
+            const finalScoreValue = finalScore.textContent;
+            const duration = 60 - timeLeft; // Hitung durasi
+
+            // Generate barcode
+            const canvas = document.getElementById('barcode-canvas');
+            const barcodeData = `NISN:${playerNISN};NAMA:${playerName};SKOR:${finalScoreValue}`;
+            JsBarcode(canvas, barcodeData, { format: "CODE128" });
+            const barcodeImage = canvas.toDataURL('image/png');
+
+            const formData = new FormData();
+            formData.append('Nama', playerName);
+            formData.append('NISN', playerNISN);
+            formData.append('Skor', finalScoreValue);
+            formData.append('Durasi', `${duration} detik`);
+            formData.append('Barcode', barcodeImage);
+
+            const scriptURL = 'https://script.google.com/macros/s/AKfycbxV9VoMnfMyD7Da6uU7J06KCT8Mesdfvw0zf9-p8TclEc_MsuETz1jFGd3-If6kMau6Jg/exec';
+
+            try {
+                // Menggunakan mode 'no-cors' untuk mengatasi potensi masalah CORS dari Google Apps Script.
+                // Ini berarti kita tidak bisa memeriksa status respons, tapi data tetap akan terkirim.
+                await fetch(scriptURL, { method: 'POST', body: formData, mode: 'no-cors' });
+                
+                // Karena mode 'no-cors', kita asumsikan pengiriman berhasil jika tidak ada network error.
+                saveStatusEl.textContent = 'Hasil berhasil disimpan!';
+                saveStatusEl.classList.add('text-green-600');
+                
+            } catch (error) {
+                console.error('Error!', error.message);
+                saveStatusEl.textContent = 'Gagal menyimpan hasil.';
+                saveStatusEl.classList.add('text-red-500');
+            }
+        }
+
+        // Fungsi untuk mereset state permainan
+        function resetGame() {
+            score = 0;
+            timeLeft = 60;
+            matchedPairs = 0;
+            selectedQuestionCard = null;
+            selectedAnswerCard = null;
+            updateScore();
+            timerEl.textContent = timeLeft;
+            questionCardsContainer.innerHTML = '';
+            answerCardsContainer.innerHTML = '';
+            resultModal.classList.add('hidden');
+            saveStatusEl.textContent = ''; // Kosongkan status simpan
+            clearInterval(timer);
+        }
+
+        // --- Event Listeners ---
+        startGameBtn.addEventListener('click', startGame);
+        
+        playAgainBtn.addEventListener('click', () => {
+            resultModal.classList.add('hidden');
+            restartGame();
+        });
+
+        backToHomeBtn.addEventListener('click', () => {
+            resultModal.classList.add('hidden');
+            gameScreen.classList.add('hidden');
+            startScreen.classList.remove('hidden');
+            playerNameInput.value = '';
+            playerNisnInput.value = '';
+            errorMessage.classList.add('hidden');
+        });
+
+        downloadPdfBtn.addEventListener('click', downloadResultsPDF);
+        
+        playerNisnInput.addEventListener('keyup', (event) => {
+            if (event.key === 'Enter') startGameBtn.click();
+        });
+        
+        playerNameInput.addEventListener('focus', () => playerNameInput.classList.remove('border-red-500'));
+        playerNisnInput.addEventListener('focus', () => playerNisnInput.classList.remove('border-red-500'));
+
+    </script>
+</body>
+</html>
